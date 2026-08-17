@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>快捷发光魔法阵</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="style.css">
+<script>
+// 直接双击 html（file:// 协议）时模块脚本会被浏览器拦截，给出提示
+window.addEventListener('DOMContentLoaded', () => {
+  if (location.protocol === 'file:') {
+    const el = document.getElementById('errOverlay');
+    el.style.display = 'block';
+    el.textContent = '不能直接双击打开 index.html（浏览器安全限制）。\n请双击文件夹里的「启动.bat」，再用浏览器访问打开的地址。';
+  }
+});
+</script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/three.module.js",
+    "three/addons/": "./vendor/three/addons/"
+  }
+}
+</script>
+</head>
+<body>
+
+<aside id="panel">
+  <h1>✦ 快捷发光魔法阵</h1>
+  <p class="sub">拖入一张 PNG 贴图，自动生成影视级发光魔法阵</p>
+
+  <section>
+    <h2>贴图</h2>
+    <div class="row btns">
+      <button id="fileBtn">选择图片…</button>
+    </div>
+    <div class="row">
+      <label>抠图模式</label>
+      <select id="keyMode">
+        <option value="auto" selected>自动检测</option>
+        <option value="alpha">透明通道</option>
+        <option value="luma">亮度（去黑底）</option>
+      </select>
+    </div>
+    <div class="row check">
+      <label><input type="checkbox" id="keepColor"> 保留贴图原色</label>
+    </div>
+    <div class="row color">
+      <label>颜色</label><input type="color" id="colorA" value="#ff4fd2">
+    </div>
+    <div class="row"><label>整体亮度</label><input type="range" id="intensity" min="0.2" max="6" step="0.05" value="1"><span class="val" id="intensityVal"></span></div>
+  </section>
+
+  <section>
+    <h2>透视</h2>
+    <p class="tip">画布上：左键拖动旋转 · 滚轮缩放 · 右键平移</p>
+    <div class="row"><label>视场角</label><input type="range" id="fov" min="25" max="70" step="1" value="45"><span class="val" id="fovVal"></span></div>
+    <div class="row btns"><button id="resetView">重置视角</button></div>
+    <div class="row color">
+      <label>背景</label><input type="color" id="bgColor" value="#0a0d16">
+    </div>
+  </section>
+
+  <section>
+    <h2>噪波能量</h2>
+    <div class="row"><label>强度</label><input type="range" id="noiseStrength" min="0" max="1" step="0.01" value="1"><span class="val" id="noiseStrengthVal"></span></div>
+    <div class="row"><label>缩放</label><input type="range" id="noiseScale" min="1" max="20" step="0.1" value="5"><span class="val" id="noiseScaleVal"></span></div>
+    <div class="row"><label>流动速度</label><input type="range" id="noiseSpeed" min="0" max="3" step="0.01" value="0.5"><span class="val" id="noiseSpeedVal"></span></div>
+    <div class="row"><label>细节层数</label><input type="range" id="noiseOctaves" min="1" max="6" step="1" value="4"><span class="val" id="noiseOctavesVal"></span></div>
+    <div class="row"><label>对比度</label><input type="range" id="noiseContrast" min="0.2" max="4" step="0.01" value="1.8"><span class="val" id="noiseContrastVal"></span></div>
+  </section>
+
+  <section>
+    <h2>波动扰动</h2>
+    <div class="row"><label>扰动强度</label><input type="range" id="waveAmp" min="0" max="0.4" step="0.005" value="0.05"><span class="val" id="waveAmpVal"></span></div>
+    <div class="row"><label>扰动速度</label><input type="range" id="waveSpeed" min="0" max="3" step="0.01" value="1"><span class="val" id="waveSpeedVal"></span></div>
+    <div class="row"><label>扰动波长</label><input type="range" id="waveFreq" min="0.5" max="8" step="0.1" value="2.5"><span class="val" id="waveFreqVal"></span></div>
+  </section>
+
+  <section>
+    <h2>辉光</h2>
+    <div class="row"><label>强度</label><input type="range" id="bloomStrength" min="0" max="4" step="0.01" value="1"><span class="val" id="bloomStrengthVal"></span></div>
+    <div class="row"><label>半径</label><input type="range" id="bloomRadius" min="0" max="1.5" step="0.01" value="1.5"><span class="val" id="bloomRadiusVal"></span></div>
+    <div class="row"><label>阈值</label><input type="range" id="bloomThreshold" min="0" max="1" step="0.01" value="0.3"><span class="val" id="bloomThresholdVal"></span></div>
+    <div class="row"><label>曝光</label><input type="range" id="exposure" min="0.2" max="3" step="0.01" value="1"><span class="val" id="exposureVal"></span></div>
+  </section>
+
+  <section>
+    <h2>导出</h2>
+    <div class="row">
+      <label>尺寸</label>
+      <select id="exportSize">
+        <option value="1024">1024 × 1024</option>
+        <option value="2048" selected>2048 × 2048</option>
+        <option value="4096">4096 × 4096</option>
+      </select>
+    </div>
+    <div class="row btns">
+      <button id="exportPngBlack">PNG（黑底）</button>
+      <button id="exportPngAlpha">PNG（透明）</button>
+    </div>
+    <div class="row">
+      <label>视频时长</label>
+      <select id="videoSecs">
+        <option value="3">3 秒</option>
+        <option value="5" selected>5 秒</option>
+        <option value="10">10 秒</option>
+      </select>
+    </div>
+    <div class="row btns"><button id="recordBtn">录制 WebM 视频</button></div>
+    <p class="tip">黑底 PNG / WebM 适合在剪辑软件中用「滤色 / 相加」混合；透明 PNG 可直接叠加。</p>
+  </section>
+</aside>
+
+<main id="stage">
+  <canvas id="gl"></canvas>
+  <div id="dropHint"><div>⬇ 拖入 PNG 魔法阵贴图 ⬇<br><small>或直接粘贴剪贴板中的图片</small></div></div>
+  <div id="toast"></div>
+</main>
+
+<div id="errOverlay"></div>
+<input type="file" id="fileInput" accept="image/png,image/jpeg,image/webp" hidden>
+
+<script type="module" src="main.js"></script>
+</body>
+</html>

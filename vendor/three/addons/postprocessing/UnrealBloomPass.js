@@ -393,15 +393,24 @@ class UnrealBloomPass extends Pass {
 
 				float lerpBloomFactor(const in float factor) {
 					float mirrorFactor = 1.2 - factor;
-					return mix(factor, mirrorFactor, bloomRadius);
+					// [定制] 半径 > 1 时截断负权重，消除亮核周围的暗边伪影
+					return max( mix( factor, mirrorFactor, bloomRadius ), 0.0 );
 				}
 
 				void main() {
-					gl_FragColor = bloomStrength * ( lerpBloomFactor(bloomFactors[0]) * vec4(bloomTintColors[0], 1.0) * texture2D(blurTexture1, vUv) +
-						lerpBloomFactor(bloomFactors[1]) * vec4(bloomTintColors[1], 1.0) * texture2D(blurTexture2, vUv) +
-						lerpBloomFactor(bloomFactors[2]) * vec4(bloomTintColors[2], 1.0) * texture2D(blurTexture3, vUv) +
-						lerpBloomFactor(bloomFactors[3]) * vec4(bloomTintColors[3], 1.0) * texture2D(blurTexture4, vUv) +
-						lerpBloomFactor(bloomFactors[4]) * vec4(bloomTintColors[4], 1.0) * texture2D(blurTexture5, vUv) );
+					// [定制] 权重归一（×3.0 保持与原版半径 ≤ 1 时相同的总能量），
+					// 半径只控制扩散范围，拉大不再整体增亮
+					float w0 = lerpBloomFactor(bloomFactors[0]);
+					float w1 = lerpBloomFactor(bloomFactors[1]);
+					float w2 = lerpBloomFactor(bloomFactors[2]);
+					float w3 = lerpBloomFactor(bloomFactors[3]);
+					float w4 = lerpBloomFactor(bloomFactors[4]);
+					float invSum = 3.0 / max( w0 + w1 + w2 + w3 + w4, 1e-4 );
+					gl_FragColor = bloomStrength * invSum * ( w0 * vec4(bloomTintColors[0], 1.0) * texture2D(blurTexture1, vUv) +
+						w1 * vec4(bloomTintColors[1], 1.0) * texture2D(blurTexture2, vUv) +
+						w2 * vec4(bloomTintColors[2], 1.0) * texture2D(blurTexture3, vUv) +
+						w3 * vec4(bloomTintColors[3], 1.0) * texture2D(blurTexture4, vUv) +
+						w4 * vec4(bloomTintColors[4], 1.0) * texture2D(blurTexture5, vUv) );
 				}`
 		} );
 

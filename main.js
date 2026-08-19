@@ -74,7 +74,8 @@ uniform sampler2D uMap;
 uniform float uTime;
 uniform vec3 uColorA;
 uniform float uIntensity;
-uniform float uKeyBlack;    // 1 = 亮度抠黑底, 0 = 透明通道
+uniform float uKeyMode;     // 0 = 透明通道, 1 = 去黑底, 2 = 去白底
+uniform float uKeyTolerance; // 抠图容差：压掉接近底色的残留（仅去黑/白底时生效）
 uniform float uKeepColor;   // 1 = 保留贴图原色
 uniform float uNoiseStrength;
 uniform float uNoiseScale;
@@ -120,10 +121,14 @@ float fbm(vec2 p, float octaves) {
 
 void main() {
   vec4 tex = texture2D(uMap, vUv);
-  float luma = dot(tex.rgb, vec3(0.299, 0.587, 0.114));
+  // 去白底：先反相成黑底，之后与去黑底走同一套逻辑
+  vec3 rgb = uKeyMode > 1.5 ? vec3(1.0) - tex.rgb : tex.rgb;
+  // 色彩容差：逐通道压掉底色残留（如 JPEG 近黑噪底），让抠图更干净
+  if (uKeyMode > 0.5) rgb = clamp((rgb - uKeyTolerance) / (1.0 - uKeyTolerance), 0.0, 1.0);
+  float luma = dot(rgb, vec3(0.299, 0.587, 0.114));
 
-  // 遮罩：透明通道 或 亮度抠黑底（保留原色+黑底时 rgb 自带形状，mask 取 1）
-  float mask = mix(tex.a, mix(luma, 1.0, uKeepColor), uKeyBlack);
+  // 遮罩：透明通道 或 亮度抠底（保留原色+黑底时 rgb 自带形状，mask 取 1）
+  float mask = uKeyMode < 0.5 ? tex.a : mix(luma, 1.0, uKeepColor);
 
   // ---- 能量噪波：缓慢旋涡 + 漂移 ----
   float t = uTime * uNoiseSpeed;
@@ -136,7 +141,7 @@ void main() {
   n = pow(clamp(n, 0.0, 1.0), uNoiseContrast);
   float energy = mix(1.0, n * 2.4, uNoiseStrength);
 
-  vec3 albedo = mix(uColorA, tex.rgb, uKeepColor);
+  vec3 albedo = mix(uColorA, rgb, uKeepColor);
 
   vec3 col = albedo * mask * energy * uIntensity;
   gl_FragColor = vec4(col, 1.0); // AdditiveBlending：rgb 已含遮罩
@@ -146,15 +151,16 @@ void main() {
 const uniforms = {
   uMap: { value: null },
   uTime: { value: 0 },
-  uColorA: { value: new THREE.Color('#ff4fd2') },
+  uColorA: { value: new THREE.Color('#99ffeb') },
   uIntensity: { value: 1.0 },
-  uKeyBlack: { value: 1.0 },
+  uKeyMode: { value: 1.0 },
+  uKeyTolerance: { value: 0.05 },
   uKeepColor: { value: 0.0 },
   uNoiseStrength: { value: 1.0 },
   uNoiseScale: { value: 5.0 },
-  uNoiseSpeed: { value: 0.5 },
-  uNoiseOctaves: { value: 4.0 },
-  uNoiseContrast: { value: 1.8 },
+  uNoiseSpeed: { value: 0.0 },
+  uNoiseOctaves: { value: 6.0 },
+  uNoiseContrast: { value: 4.0 },
   uWaveAmp: { value: 0.05 },
   uWaveSpeed: { value: 1.0 },
   uWaveFreq: { value: 2.5 },
@@ -183,19 +189,32 @@ composer.addPass(bloomPass);
 composer.addPass(new OutputPass());
 
 /* ---------- 贴图加载 ---------- */
-function detectAlpha(bitmap) {
+const KEY_MODE_NAMES = ['透明通道', '自动去黑底', '自动去白底'];
+
+// 自动识别抠图方式：0 = 透明通道, 1 = 去黑底, 2 = 去白底
+function detectKeyMode(bitmap) {
   const s = 128;
   const c = document.createElement('canvas');
   c.width = c.height = s;
   const ctx = c.getContext('2d', { willReadFrequently: true });
   ctx.drawImage(bitmap, 0, 0, s, s);
   const data = ctx.getImageData(0, 0, s, s).data;
-  let min = 255;
+  let minAlpha = 255;
   for (let i = 3; i < data.length; i += 16) { // 每4个像素抽1个
-    if (data[i] < min) min = data[i];
-    if (min < 250) break;
+    if (data[i] < minAlpha) minAlpha = data[i];
+    if (minAlpha < 250) break;
   }
-  return min < 250; // 有真实透明区域
+  if (minAlpha < 250) return 0; // 有真实透明区域 → 透明通道
+  // 无透明通道：看四周边缘平均亮度，区分黑底 / 白底
+  let sum = 0, cnt = 0;
+  for (let i = 0; i < s; i++) {
+    for (const [x, y] of [[i, 0], [i, s - 1], [0, i], [s - 1, i]]) {
+      const p = (y * s + x) * 4;
+      sum += data[p] * 0.299 + data[p + 1] * 0.587 + data[p + 2] * 0.114;
+      cnt++;
+    }
+  }
+  return (sum / cnt) > 128 ? 2 : 1;
 }
 
 function fitUv(w, h) {
@@ -224,21 +243,22 @@ async function loadTextureFromBlob(blob, name = '贴图') {
   fitUv(bitmap.width, bitmap.height);
   // 自动抠图模式
   if ($('keyMode').value === 'auto') {
-    uniforms.uKeyBlack.value = detectAlpha(bitmap) ? 0.0 : 1.0;
-    toast(`已载入「${name}」· 自动使用${uniforms.uKeyBlack.value ? '亮度抠黑底' : '透明通道'}`);
+    uniforms.uKeyMode.value = detectKeyMode(bitmap);
+    toast(`已载入「${name}」· 自动识别：${KEY_MODE_NAMES[uniforms.uKeyMode.value]}`);
   } else {
     applyKeyMode();
     toast(`已载入「${name}」`);
   }
-  console.log('[app] texture loaded:', bitmap.width, 'x', bitmap.height, 'keyBlack =', uniforms.uKeyBlack.value);
+  console.log('[app] texture loaded:', bitmap.width, 'x', bitmap.height, 'keyMode =', uniforms.uKeyMode.value);
   window.__texReady = true;
 }
 
 function applyKeyMode() {
   const m = $('keyMode').value;
-  if (m === 'alpha') uniforms.uKeyBlack.value = 0.0;
-  else if (m === 'luma') uniforms.uKeyBlack.value = 1.0;
-  else if (currentTex) uniforms.uKeyBlack.value = detectAlpha(currentTex.image) ? 0.0 : 1.0;
+  if (m === 'alpha') uniforms.uKeyMode.value = 0;
+  else if (m === 'luma') uniforms.uKeyMode.value = 1;
+  else if (m === 'white') uniforms.uKeyMode.value = 2;
+  else if (currentTex) uniforms.uKeyMode.value = detectKeyMode(currentTex.image);
 }
 
 function loadTextureFromUrl(url, name) {
@@ -296,6 +316,7 @@ function bindColor(id, fn) {
 
 bindColor('colorA', v => uniforms.uColorA.value.set(v));
 bindRange('intensity', v => uniforms.uIntensity.value = v);
+bindRange('keyTolerance', v => uniforms.uKeyTolerance.value = v);
 bindRange('fov', v => { camera.fov = v; camera.updateProjectionMatrix(); }, v => v.toFixed(0) + '°');
 bindColor('bgColor', v => scene.background.set(v));
 bindRange('noiseStrength', v => uniforms.uNoiseStrength.value = v);

@@ -49,6 +49,11 @@ const LuminosityHighPassShader = {
 
 			vec4 texel = texture2D( tDiffuse, vUv );
 
+			// [定制] 保色相软限幅：峰值超过 1 的高动态部分等比压缩（色相不变），
+			// 限制进入辉光模糊链的能量，防止强度拉大后画面被推成一片死白
+			float peak = max( texel.r, max( texel.g, texel.b ) );
+			texel.rgb /= 1.0 + max( peak - 1.0, 0.0 ) * 0.75;
+
 			vec3 luma = vec3( 0.299, 0.587, 0.114 );
 
 			float v = dot( texel.xyz, luma );

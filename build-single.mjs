@@ -47,6 +47,8 @@ html = html.replace('<script type="module" src="main.js"></script>', () => `<scr
 if (html.includes('importmap') || html.includes('main.js') || html.includes('style.css')) throw new Error('HTML 内联不完整');
 
 fs.mkdirSync(distDir, { recursive: true });
-const out = path.join(distDir, '快捷发光魔法阵.html');
+const version = process.argv[2]; // 例如：node build-single.mjs v2.0
+const outName = version ? `快捷发光魔法阵_${version}.html` : '快捷发光魔法阵.html';
+const out = path.join(distDir, outName);
 fs.writeFileSync(out, html);
 console.log(`完成：${out}（${(fs.statSync(out).size / 1024 / 1024).toFixed(1)} MB）`);
